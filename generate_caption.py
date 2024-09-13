@@ -3,6 +3,8 @@ from qwen_vl_utils import process_vision_info
 import os
 import json
 from PIL import Image
+import time
+from tqdm import tqdm
 
 # モデルの選択（2B モデルか 7B モデルかを選択）
 model_id = "Qwen/Qwen2-VL-7B-Instruct"
@@ -66,22 +68,40 @@ def process_image(image_path):
 # 画像フォルダのパス
 images_folder = "images"
 
-# 結果を格納する辞書
-results = {}
+# 処理対象の画像ファイルリストを取得
+image_files = [f for f in os.listdir(images_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))]
+total_images = len(image_files)
 
-# 画像フォルダ内の全ての画像ファイルを処理
-for filename in os.listdir(images_folder):
-    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-        image_path = os.path.join(images_folder, filename)
-        print(f"Processing {filename}...")
-        caption = process_image(image_path)
-        results[filename] = caption
+# 結果を格納するJSONファイル
+json_file = "captions.json"
 
-# 結果をJSONファイルに出力
-with open("captions.json", "w", encoding="utf-8") as f:
-    json.dump(results, f, ensure_ascii=False, indent=4)
+# 既存の結果をロード（ファイルが存在する場合）
+if os.path.exists(json_file):
+    with open(json_file, "r", encoding="utf-8") as f:
+        results = json.load(f)
+else:
+    results = {}
 
-print("処理が完了しました。結果はcaptions.jsonに保存されました。")
+# 画像ファイルを処理
+for i, filename in enumerate(tqdm(image_files), 1):
+    image_path = os.path.join(images_folder, filename)
+    start_time = time.time()
+    
+    print(f"\n処理中: {i}/{total_images} - {filename}")
+    
+    caption = process_image(image_path)
+    results[filename] = caption
+    
+    # 結果をJSONファイルに追記
+    with open(json_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)
+    
+    end_time = time.time()
+    processing_time = end_time - start_time
+    
+    print(f"処理時間: {processing_time:.2f}秒")
+
+print(f"\n処理が完了しました。結果は{json_file}に保存されました。")
 
 
 
