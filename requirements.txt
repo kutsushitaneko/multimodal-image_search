@@ -1,0 +1,10 @@
+ftfy
+transformers
+sentencepiece
+gradio
+huggingface_hub
+accelerate
+protobuf
+oracledb
+pillow
+python-dotenv

@@ -1,0 +1,7 @@
+--upgrade
+--find-links https://download.pytorch.org/whl/cu124
+torch
+torchvision
+git+https://github.com/huggingface/transformers
+accelerate>=0.26.0
+qwen-vl-utils
