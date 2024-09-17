@@ -55,7 +55,7 @@ def process_image(image_path):
     inputs = inputs.to("cuda")
 
     # 推論：出力の生成
-    generated_ids = model.generate(**inputs, max_new_tokens=1000)
+    generated_ids = model.generate(**inputs, max_new_tokens=1000, repetition_penalty=1.1)
     generated_ids_trimmed = [
         out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
@@ -84,6 +84,11 @@ else:
 
 # 画像ファイルを処理
 for i, filename in enumerate(tqdm(image_files), 1):
+    # ファイルが既に処理済みかチェック
+    if filename in results:
+        print(f"\nスキップ: {i}/{total_images} - {filename} (既に処理済み)")
+        continue
+
     image_path = os.path.join(images_folder, filename)
     start_time = time.time()
     

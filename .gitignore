@@ -1,3 +1,5 @@
 .venv/
 memo/
 .env
+*.json
+multimodal-image_search.code-workspace
