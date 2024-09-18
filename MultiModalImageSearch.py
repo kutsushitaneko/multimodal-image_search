@@ -175,6 +175,25 @@ def search_images(query, search_type, search_method, limit=16):
                 ORDER BY similarity
                 FETCH FIRST :limit ROWS ONLY
             """, {'query_embedding': embedding_json, 'limit': limit})
+        elif search_method == "similar_prompt":
+            embed_text_detail = EmbedTextDetails()
+            embed_text_detail.serving_mode = OnDemandServingMode(model_id=model_id)
+            embed_text_detail.inputs = [query]
+            embed_text_detail.truncate = "NONE"
+            embed_text_detail.compartment_id = compartment_id
+            embed_text_detail.is_echo = False
+            embed_text_detail.input_type = "SEARCH_QUERY"
+
+            embed_text_response = generative_ai_inference_client.embed_text(embed_text_detail)
+            embedding_json = json.dumps(embed_text_response.data.embeddings[0])
+            
+            cursor.execute("""
+                SELECT i.image_id, i.file_name, i.generation_prompt,
+                       i.prompt_embedding <#> :query_embedding as similarity
+                FROM IMAGES i
+                ORDER BY similarity
+                FETCH FIRST :limit ROWS ONLY
+            """, {'query_embedding': embedding_json, 'limit': limit})
     elif search_type == "image":
         embedding_json = json.dumps(compute_image_embeddings(query).tolist()[0])
         cursor.execute("""
@@ -270,6 +289,11 @@ def on_select(evt: gr.SelectData, image_info):
     else:
         return "選択エラー", "N/A", "選択エラー", "選択エラー"
 
+def clear_text_input(image):
+    if image is not None:
+        return gr.update(value="")
+    return gr.update()
+
 with gr.Blocks(title="画像検索") as demo:
     image_info_state = gr.State([])
     # images_state = gr.State([]) を削除
@@ -278,7 +302,7 @@ with gr.Blocks(title="画像検索") as demo:
         with gr.Column(scale=4):
             gr.Markdown("# マルチモーダル画像検索")
             search_method = gr.Radio(
-                ["類似画像", "類似キャプション"],
+                ["類似画像", "類似キャプション", "類似プロンプト"],
                 label="自然言語による検索",
                 value="類似画像"
             )
@@ -307,13 +331,17 @@ with gr.Blocks(title="画像検索") as demo:
 
     def search_wrapper(text_query, image_query, search_method):
         if text_query:
-            method = "image" if search_method == "類似画像" else "similar_caption"
+            method = "image" if search_method == "類似画像" else "similar_caption" if search_method == "類似キャプション" else "similar_prompt"
             images, image_info = search(text_query, "text", method)
+            # テキスト検索時に画像入力をクリア
+            image_input_update = gr.update(value=None)
         elif image_query is not None:
             images, image_info = search(image_query, "image", "image")
+            image_input_update = gr.update()
         else:
             images, image_info = load_initial_images()
-        return images, image_info, gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True), gr.update(selected_index=None)
+            image_input_update = gr.update()
+        return images, image_info, gr.update(interactive=True), image_input_update, gr.update(interactive=True), gr.update(selected_index=None)
 
     def clear_inputs():
         return (
@@ -339,6 +367,9 @@ with gr.Blocks(title="画像検索") as demo:
 
     # ギャラリーの選択イベントを追加
     gallery.select(on_select, inputs=[image_info_state], outputs=[file_name, distance, generation_prompt, caption])
+
+    # 画像アップロード時にテキスト入力をクリアする
+    image_input.change(clear_text_input, inputs=[image_input], outputs=[text_input])
 
 if __name__ == "__main__":
     try:
