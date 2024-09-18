@@ -134,17 +134,13 @@ def load_initial_images():
             'generation_prompt': generation_prompt,
             'caption': description
         })
-        #print("-----------------------------------------")
-        #print(f"image_id: {image_id}")
-        #print(f"image_info[{index}]:\n{image_info[index]}")
-        #print("-----------------------------------------")
     return images, image_info
 
 def search_images(query, search_method, search_target, limit=16):
     connection = oracledb.connect(user=username, password=password, dsn=dsn)
     cursor = connection.cursor()
 
-    if search_method == "ベクトル検索":
+    if search_method == "自然言語ベクトル検索":
         if search_target == "画像":
             embedding_json = json.dumps(compute_text_embeddings(query).tolist()[0])
             cursor.execute("""
@@ -194,7 +190,7 @@ def search_images(query, search_method, search_target, limit=16):
                 ORDER BY similarity
                 FETCH FIRST :limit ROWS ONLY
             """, {'query_embedding': embedding_json, 'limit': limit})
-    elif search_method == "キーワード検索":
+    elif search_method == "自然言語全文検索":
         if search_target == "キャプション":
             cursor.execute("""
                 SELECT i.image_id, i.file_name, i.generation_prompt, score(1) as relevance
@@ -212,7 +208,7 @@ def search_images(query, search_method, search_target, limit=16):
                 ORDER BY relevance DESC
                 FETCH FIRST :limit ROWS ONLY
             """, {'query': query, 'limit': limit})
-    elif search_method == "画像検索":
+    elif search_method == "画像ベクトル検索":
         embedding_json = json.dumps(compute_image_embeddings(query).tolist()[0])
         cursor.execute("""
             SELECT i.image_id, i.file_name, i.generation_prompt,
@@ -230,7 +226,7 @@ def search_images(query, search_method, search_target, limit=16):
     # LOBオブジェクトを文字列に変換
     processed_results = []
     for row in results:
-        if search_method == "キーワード検索":
+        if search_method == "自然言語全文検索":
             image_id, file_name, generation_prompt, relevance = row
             similarity = relevance  # OracleTextのスコアを類似度として使用
         else:
@@ -271,50 +267,9 @@ def search(query, search_method, search_target, page=1):
             'generation_prompt': generation_prompt,
             'similarity': similarity if similarity is not None else 'N/A'
         })
-        """
-        print("-----------------------------------------")
-        print(f"image_id: {image_id}")
-        print(f"image_info[{index}]:\n{image_info[index]}")
-        print("-----------------------------------------")
-        """
     return images, image_info
 
-def on_select(evt: gr.SelectData, image_info):
-    selected_index = evt.index
-    if 0 <= selected_index < len(image_info):
-        info = image_info[selected_index]
-        similarity = info.get('similarity', 'N/A')
-        
-        # データベースから複数のdescriptionを取得
-        connection = oracledb.connect(user=username, password=password, dsn=dsn)
-        cursor = connection.cursor()
-        
-        cursor.execute("""
-            SELECT description
-            FROM IMAGE_DESCRIPTIONS
-            WHERE image_id = (SELECT image_id FROM IMAGES WHERE file_name = :file_name)
-            ORDER BY description_id
-        """, {'file_name': info['file_name']})
-        
-        descriptions = cursor.fetchall()
-        
-        # LOBオブジェクトを文字列に変換
-        description_texts = [desc[0].read() if desc[0] else "" for desc in descriptions]
-        
-        cursor.close()
-        connection.close()
-        
-        # descriptionを連結
-        combined_description = "\n\n".join(description_texts) if description_texts else "説明なし"
-        
-        return info['file_name'], str(similarity), info['generation_prompt'], combined_description
-    else:
-        return "選択エラー", "N/A", "選択エラー", "選択エラー"
 
-def clear_text_input(image):
-    if image is not None:
-        return gr.update(value="")
-    return gr.update()
 
 with gr.Blocks(title="画像検索") as demo:
     image_info_state = gr.State([])
@@ -323,11 +278,11 @@ with gr.Blocks(title="画像検索") as demo:
     with gr.Row():
         with gr.Column(scale=4):
             with gr.Row():
-                with gr.Column(scale=2):
+                with gr.Column(scale=3):
                     search_method = gr.Radio(
-                        ["ベクトル検索", "キーワード検索", "画像検索"],
+                        ["自然言語ベクトル検索", "自然言語全文検索", "画像ベクトル検索"],
                         label="検索方法",
-                        value="ベクトル検索"
+                        value="自然言語ベクトル検索"
                     )
                 with gr.Column(scale=2):
                     search_target = gr.Radio(
@@ -370,14 +325,14 @@ with gr.Blocks(title="画像検索") as demo:
             text_input_update = gr.update(interactive=False)
         else:
             images, image_info = load_initial_images()
-            image_input_update = gr.update(interactive=search_method == "画像検索")
-            text_input_update = gr.update(interactive=search_method != "画像検索")
+            image_input_update = gr.update(interactive=search_method == "画像ベクトル検索")
+            text_input_update = gr.update(interactive=search_method != "画像ベクトル検索")
         return images, image_info, text_input_update, image_input_update, gr.update(interactive=True), gr.update(selected_index=None)
 
-    def clear_inputs(search_method):
+    def clear_components(search_method):
         return (
-            gr.update(value="", interactive=search_method != "画像検索"),  # text_input
-            gr.update(value=None, interactive=search_method == "画像検索"),  # image_input
+            gr.update(value="", interactive=search_method != "画像ベクトル検索"),  # text_input
+            gr.update(value=None, interactive=search_method == "画像ベクトル検索"),  # image_input
             gr.update(interactive=True),  # search_button
             gr.update(value=None, selected_index=None),  # gallery
             [],  # image_info_state
@@ -387,39 +342,64 @@ with gr.Blocks(title="画像検索") as demo:
             gr.update(value="")   # caption
         )
 
-    
     def update_text_input(search_method):
-        if search_method == "画像検索":
+        if search_method == "画像ベクトル検索":
             return gr.update(value=None, interactive=False)
         else:
             return gr.update(interactive=True)
         
     def update_image_input(search_method):
-        if search_method == "画像検索":
+        if search_method == "画像ベクトル検索":
             return gr.update(interactive=True)
         else:
             return gr.update(value=None, interactive=False)
         
     def update_search_target(search_method):
-        if search_method == "キーワード検索":
+        if search_method == "自然言語全文検索":
             return gr.update(choices=["キャプション", "プロンプト"], value="キャプション")
-        elif search_method == "画像検索":
+        elif search_method == "画像ベクトル検索":
             return gr.update(choices=["画像"], value="画像")
         else:
             return gr.update(choices=["画像", "キャプション", "プロンプト"], value="画像")
 
-    search_button.click(search_wrapper, inputs=[text_input, image_input, search_method, search_target], outputs=[gallery, image_info_state, text_input, image_input, search_button, gallery])
-    clear_button.click(clear_inputs, inputs=[search_method], outputs=[text_input, image_input, search_button, gallery, image_info_state, file_name, distance, generation_prompt, caption])
+    def on_select(evt: gr.SelectData, image_info):
+        selected_index = evt.index
+        if 0 <= selected_index < len(image_info):
+            info = image_info[selected_index]
+            similarity = info.get('similarity', 'N/A')
+            
+            # データベースからdescriptionを取得
+            connection = oracledb.connect(user=username, password=password, dsn=dsn)
+            cursor = connection.cursor()
+            
+            cursor.execute("""
+                SELECT description
+                FROM IMAGE_DESCRIPTIONS
+                WHERE image_id = (SELECT image_id FROM IMAGES WHERE file_name = :file_name)
+                ORDER BY description_id
+            """, {'file_name': info['file_name']})
+            
+            descriptions = cursor.fetchall()
+            
+            # LOBオブジェクトを文字列に変換
+            description_texts = [desc[0].read() if desc[0] else "" for desc in descriptions]
+            
+            cursor.close()
+            connection.close()
+            
+            # descriptionを連結
+            combined_description = "\n\n".join(description_texts) if description_texts else "説明なし"
+            
+            return info['file_name'], str(similarity), info['generation_prompt'], combined_description
+        else:
+            return "選択エラー", "N/A", "選択エラー", "選択エラー"
     
+    search_button.click(search_wrapper, inputs=[text_input, image_input, search_method, search_target], outputs=[gallery, image_info_state, text_input, image_input, search_button, gallery])
+    clear_button.click(clear_components, inputs=[search_method], outputs=[text_input, image_input, search_button, gallery, image_info_state, file_name, distance, generation_prompt, caption])
     search_method.change(update_image_input, inputs=[search_method], outputs=[image_input])
     search_method.change(update_text_input, inputs=[search_method], outputs=[text_input])
     search_method.change(update_search_target, inputs=[search_method], outputs=[search_target])
-
-    # ギャラリーの選択イベント
     gallery.select(on_select, inputs=[image_info_state], outputs=[file_name, distance, generation_prompt, caption])
-
-    # 画像アップロード時にテキスト入力をクリアする
-    image_input.change(clear_text_input, inputs=[image_input], outputs=[text_input])
 
     # デモの起動時に初期画像を表示するための関数
     def load_initial_gallery():
@@ -432,9 +412,7 @@ with gr.Blocks(title="画像検索") as demo:
 if __name__ == "__main__":
     try:
         demo.queue()
-        demo.launch(inbrowser=True, debug=True, share=True, server_port=8899)
-    except KeyboardInterrupt:
-        demo.close()
+        demo.launch(debug=True, share=True, server_port=8899)
     except Exception as e:
         print(e)
         demo.close()
