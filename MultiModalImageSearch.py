@@ -342,6 +342,7 @@ with gr.Blocks(title="画像検索") as demo:
             gallery = gr.Gallery(label="検索結果", show_label=False, elem_id="gallery", columns=[8], rows=[2], height=380, interactive=False, show_download_button=True)
     with gr.Row():
         prev_button = gr.Button("前")
+        page_info = gr.Textbox(interactive=False, show_label=False, container=False)
         next_button = gr.Button("次")
     
     with gr.Row():
@@ -362,9 +363,12 @@ with gr.Blocks(title="画像検索") as demo:
         connection.close()
         return count
     
-    def change_page(direction, current_page):
+    def get_total_pages():
         total_images = get_total_image_count()
-        total_pages = (total_images + IMAGES_PER_PAGE - 1) // IMAGES_PER_PAGE
+        return (total_images + IMAGES_PER_PAGE - 1) // IMAGES_PER_PAGE
+    
+    def change_page(direction, current_page):
+        total_pages = get_total_pages()
 
         if direction == "next" and current_page < total_pages:
             current_page += 1
@@ -373,7 +377,8 @@ with gr.Blocks(title="画像検索") as demo:
         
         images, image_info = load_initial_images(current_page)
         gallery_images = [(img, None) for img in images]
-        return gallery_images, image_info, gr.update(interactive=current_page > 1), gr.update(interactive=current_page < total_pages), current_page
+        page_info_text = f"{current_page} / {total_pages}"
+        return gallery_images, image_info, gr.update(interactive=current_page > 1), gr.update(interactive=current_page < total_pages), current_page, page_info_text
 
     def next_page(current_page):
         return change_page("next", current_page)
@@ -477,17 +482,17 @@ with gr.Blocks(title="画像検索") as demo:
     search_method.change(update_text_input, inputs=[search_method], outputs=[text_input])
     search_method.change(update_search_target, inputs=[search_method], outputs=[search_target])
     gallery.select(on_select, inputs=[image_info_state], outputs=[file_name, distance, generation_prompt, caption])
-    next_button.click(next_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page])
-    prev_button.click(prev_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page])
+    next_button.click(next_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page, page_info])
+    prev_button.click(prev_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page, page_info])
 
     # デモの起動時に初期画像を表示するための関数
     def load_initial_gallery():
         images, image_info = load_initial_images(1)
-        total_images = get_total_image_count()
-        total_pages = (total_images + IMAGES_PER_PAGE - 1) // IMAGES_PER_PAGE
-        return images, image_info, gr.update(interactive=False), gr.update(interactive=total_pages > 1), 1
+        total_pages = get_total_pages()
+        page_info_text = f"1 / {total_pages}"
+        return images, image_info, gr.update(interactive=False), gr.update(interactive=total_pages > 1), 1, page_info_text
 
-    demo.load(load_initial_gallery, outputs=[gallery, image_info_state, prev_button, next_button, current_page])
+    demo.load(load_initial_gallery, outputs=[gallery, image_info_state, prev_button, next_button, current_page, page_info])
     
     # デモの起動時に初期画像を表示
     demo.load(load_initial_gallery, outputs=[gallery, image_info_state])
