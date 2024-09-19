@@ -174,7 +174,8 @@ def load_initial_images():
         images.append(Image.open(io.BytesIO(image_data)))
         image_info.append({
             'file_name': file_name,
-            'generation_prompt': generation_prompt
+            'generation_prompt': generation_prompt,
+            'vector_distance': 'N/A'
         })
     return images, image_info
 
@@ -358,7 +359,7 @@ with gr.Blocks(title="画像検索") as demo:
             image_input_update = gr.update(interactive=search_method == "画像ベクトル検索")
             text_input_update = gr.update(interactive=search_method != "画像ベクトル検索")
         label = "スコア" if search_method == "自然言語全文検索" else "距離"
-        gallery_images = [(img, f"{label}: {round(float(info['vector_distance']), 3) if info['vector_distance'] != 'N/A' else 'N/A'}") for img, info in zip(images, image_info)]
+        gallery_images = [(img, f"{label}: {round(float(info['vector_distance']), 3)}" if info['vector_distance'] != 'N/A' else None) for img, info in zip(images, image_info)]
         return gallery_images, image_info, text_input_update, image_input_update, gr.update(interactive=True), gr.update(selected_index=None)
 
     def clear_components(search_method):
