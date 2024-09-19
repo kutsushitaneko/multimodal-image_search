@@ -16,6 +16,8 @@ from oci.generative_ai_inference.models import EmbedTextDetails, OnDemandServing
 
 _ = load_dotenv(find_dotenv())
 
+IMAGES_PER_PAGE = 16
+
 # データベース接続情報
 username = os.getenv("DB_USER")
 password = os.getenv("DB_PASSWORD")
@@ -34,6 +36,8 @@ config = from_file('~/.oci/config', CONFIG_PROFILE)
 compartment_id = os.getenv("OCI_COMPARTMENT_ID")
 model_id = "cohere.embed-multilingual-v3.0"
 generative_ai_inference_client = GenerativeAiInferenceClient(config=config, retry_strategy=oci.retry.NoneRetryStrategy(), timeout=(10,240))
+
+
 
 def basic_clean(text):
     text = ftfy.fix_text(text)
@@ -124,8 +128,34 @@ def compute_image_embeddings(image):
     del image
     return image_features.cpu().detach()
 
+def get_image_data(image_id):
+    connection = oracledb.connect(user=username, password=password, dsn=dsn)
+    cursor = connection.cursor()
 
-def get_latest_images(limit=16):
+    cursor.execute("SELECT image_data FROM IMAGES WHERE image_id = :image_id", {'image_id': image_id})
+    image_data = cursor.fetchone()[0].read()
+
+    cursor.close()
+    connection.close()
+
+    return image_data
+
+def load_initial_images(page=1):
+    offset = (page - 1) * IMAGES_PER_PAGE
+    results = get_latest_images(limit=IMAGES_PER_PAGE, offset=offset)
+    images = []
+    image_info = []
+    for image_id, file_name, generation_prompt in results:
+        image_data = get_image_data(image_id)
+        images.append(Image.open(io.BytesIO(image_data)))
+        image_info.append({
+            'file_name': file_name,
+            'generation_prompt': generation_prompt,
+            'vector_distance': 'N/A'
+        })
+    return images, image_info
+
+def get_latest_images(limit=16, offset=0):
     connection = oracledb.connect(user=username, password=password, dsn=dsn)
     cursor = connection.cursor()
 
@@ -133,8 +163,8 @@ def get_latest_images(limit=16):
         SELECT i.image_id, i.file_name, i.generation_prompt
         FROM IMAGES i
         ORDER BY i.upload_date DESC
-        FETCH FIRST :limit ROWS ONLY
-    """, {'limit': limit})
+        OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
+    """, {'limit': limit, 'offset': offset})
 
     results = cursor.fetchall()
     
@@ -152,32 +182,6 @@ def get_latest_images(limit=16):
     connection.close()
 
     return processed_results
-
-def get_image_data(image_id):
-    connection = oracledb.connect(user=username, password=password, dsn=dsn)
-    cursor = connection.cursor()
-
-    cursor.execute("SELECT image_data FROM IMAGES WHERE image_id = :image_id", {'image_id': image_id})
-    image_data = cursor.fetchone()[0].read()
-
-    cursor.close()
-    connection.close()
-
-    return image_data
-
-def load_initial_images():
-    results = get_latest_images(limit=16)
-    images = []
-    image_info = []
-    for image_id, file_name, generation_prompt in results:
-        image_data = get_image_data(image_id)
-        images.append(Image.open(io.BytesIO(image_data)))
-        image_info.append({
-            'file_name': file_name,
-            'generation_prompt': generation_prompt,
-            'vector_distance': 'N/A'
-        })
-    return images, image_info
 
 def search_images(query, search_method, search_target, limit=16):
     connection = oracledb.connect(user=username, password=password, dsn=dsn)
@@ -306,6 +310,7 @@ def search(query, search_method, search_target, page=1):
 
 with gr.Blocks(title="画像検索") as demo:
     image_info_state = gr.State([])
+    current_page = gr.State(1)
 
     gr.Markdown("# マルチモーダル画像検索")
     with gr.Row():
@@ -335,6 +340,9 @@ with gr.Blocks(title="画像検索") as demo:
     with gr.Row():    
         with gr.Column(scale=7):
             gallery = gr.Gallery(label="検索結果", show_label=False, elem_id="gallery", columns=[8], rows=[2], height=380, interactive=False, show_download_button=True)
+    with gr.Row():
+        prev_button = gr.Button("前")
+        next_button = gr.Button("次")
     
     with gr.Row():
         with gr.Column(scale=1):
@@ -345,22 +353,58 @@ with gr.Blocks(title="画像検索") as demo:
         with gr.Column(scale=2):
             caption = gr.Textbox(label="キャプション", lines=4)
 
+    def get_total_image_count():
+        connection = oracledb.connect(user=username, password=password, dsn=dsn)
+        cursor = connection.cursor()
+        cursor.execute("SELECT COUNT(*) FROM IMAGES")
+        count = cursor.fetchone()[0]
+        cursor.close()
+        connection.close()
+        return count
+    
+    def change_page(direction, current_page):
+        total_images = get_total_image_count()
+        total_pages = (total_images + IMAGES_PER_PAGE - 1) // IMAGES_PER_PAGE
+
+        if direction == "next" and current_page < total_pages:
+            current_page += 1
+        elif direction == "prev" and current_page > 1:
+            current_page -= 1
+        
+        images, image_info = load_initial_images(current_page)
+        gallery_images = [(img, None) for img in images]
+        return gallery_images, image_info, gr.update(interactive=current_page > 1), gr.update(interactive=current_page < total_pages), current_page
+
+    def next_page(current_page):
+        return change_page("next", current_page)
+
+    def prev_page(current_page):
+        return change_page("prev", current_page)
+
+
     def search_wrapper(text_query, image_query, search_method, search_target):
         if text_query:
             images, image_info = search(text_query, search_method, search_target)
             image_input_update = gr.update(value=None, interactive=False)
             text_input_update = gr.update(interactive=True)
+            prev_button_update = gr.update(interactive=False)
+            next_button_update = gr.update(interactive=False)
         elif image_query is not None:
             images, image_info = search(image_query, search_method, search_target)
             image_input_update = gr.update(interactive=True)
             text_input_update = gr.update(interactive=False)
-        else:
+            prev_button_update = gr.update(interactive=False)
+            next_button_update = gr.update(interactive=False)
+        else: # 検索条件がない場合は、初期画像（最近アップロードされた画像）を表示
             images, image_info = load_initial_images()
             image_input_update = gr.update(interactive=search_method == "画像ベクトル検索")
             text_input_update = gr.update(interactive=search_method != "画像ベクトル検索")
+            prev_button_update = gr.update(interactive=True)
+            next_button_update = gr.update(interactive=True)
         label = "スコア" if search_method == "自然言語全文検索" else "距離"
         gallery_images = [(img, f"{label}: {round(float(info['vector_distance']), 3)}" if info['vector_distance'] != 'N/A' else None) for img, info in zip(images, image_info)]
-        return gallery_images, image_info, text_input_update, image_input_update, gr.update(interactive=True), gr.update(selected_index=None)
+        return gallery_images, image_info, text_input_update, image_input_update, gr.update(interactive=True), gr.update(selected_index=None), prev_button_update, next_button_update
+
 
     def clear_components(search_method):
         return (
@@ -427,17 +471,23 @@ with gr.Blocks(title="画像検索") as demo:
         else:
             return "選択エラー", "N/A", "選択エラー", "選択エラー"
     
-    search_button.click(search_wrapper, inputs=[text_input, image_input, search_method, search_target], outputs=[gallery, image_info_state, text_input, image_input, search_button, gallery])
+    search_button.click(search_wrapper, inputs=[text_input, image_input, search_method, search_target], outputs=[gallery, image_info_state, text_input, image_input, search_button, gallery, prev_button, next_button])
     clear_button.click(clear_components, inputs=[search_method], outputs=[text_input, image_input, search_button, gallery, image_info_state, file_name, distance, generation_prompt, caption])
     search_method.change(update_image_input, inputs=[search_method], outputs=[image_input])
     search_method.change(update_text_input, inputs=[search_method], outputs=[text_input])
     search_method.change(update_search_target, inputs=[search_method], outputs=[search_target])
     gallery.select(on_select, inputs=[image_info_state], outputs=[file_name, distance, generation_prompt, caption])
+    next_button.click(next_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page])
+    prev_button.click(prev_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page])
 
     # デモの起動時に初期画像を表示するための関数
     def load_initial_gallery():
-        images, image_info = load_initial_images()
-        return images, image_info
+        images, image_info = load_initial_images(1)
+        total_images = get_total_image_count()
+        total_pages = (total_images + IMAGES_PER_PAGE - 1) // IMAGES_PER_PAGE
+        return images, image_info, gr.update(interactive=False), gr.update(interactive=total_pages > 1), 1
+
+    demo.load(load_initial_gallery, outputs=[gallery, image_info_state, prev_button, next_button, current_page])
     
     # デモの起動時に初期画像を表示
     demo.load(load_initial_gallery, outputs=[gallery, image_info_state])
