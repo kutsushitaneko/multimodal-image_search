@@ -75,21 +75,54 @@ def tokenize(
     )
 
 def compute_text_embeddings(text):
-  if isinstance(text, str):
-    text = [text]
-  text = tokenize(texts=text)
-  text_features = model.get_text_features(**text.to(device))
-  text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
-  del text
-  return text_features.cpu().detach()
+    """
+    テキストの埋め込みベクトルを計算する関数。
+
+    Args:
+        text (str or List[str]): 埋め込みを計算するテキスト。単一の文字列または文字列のリスト。
+
+    Returns:
+        torch.Tensor: 正規化されたテキストの埋め込みベクトル。
+
+    処理の流れ:
+    1. 入力が単一の文字列の場合、リストに変換。
+    2. テキストをトークン化。
+    3. モデルを使用してテキスト特徴量を抽出。
+    4. 特徴量ベクトルを正規化。
+    5. 不要なメモリを解放。
+    6. CPUに移動し、勾配計算を無効化して結果を返す。
+    """
+    if isinstance(text, str):
+        text = [text]
+    text = tokenize(texts=text)
+    text_features = model.get_text_features(**text.to(device))
+    text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
+    del text
+    return text_features.cpu().detach()
 
 def compute_image_embeddings(image):
-  image = processor(images=image, return_tensors="pt").to(device)
-  with torch.no_grad():
-    image_features = model.get_image_features(**image)
-  image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
-  del image
-  return image_features.cpu().detach()
+    """
+    画像の埋め込みベクトルを計算する関数。
+
+    Args:
+        image (PIL.Image.Image): 埋め込みを計算する画像。
+
+    Returns:
+        torch.Tensor: 正規化された画像の埋め込みベクトル。
+
+    処理の流れ:
+    1. 画像をモデルの入力形式に変換し、デバイスに移動。
+    2. 勾配計算を無効化して、モデルを使用して画像特徴量を抽出。
+    3. 特徴量ベクトルを正規化。
+    4. 不要なメモリを解放。
+    5. CPUに移動し、勾配計算を無効化して結果を返す。
+    """
+    image = processor(images=image, return_tensors="pt").to(device)
+    with torch.no_grad():
+        image_features = model.get_image_features(**image)
+    image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+    del image
+    return image_features.cpu().detach()
 
 
 def get_latest_images(limit=16):
@@ -97,9 +130,8 @@ def get_latest_images(limit=16):
     cursor = connection.cursor()
 
     cursor.execute("""
-        SELECT i.image_id, i.file_name, i.generation_prompt, d.description
+        SELECT i.image_id, i.file_name, i.generation_prompt
         FROM IMAGES i
-        LEFT JOIN IMAGE_DESCRIPTIONS d ON i.image_id = d.image_id
         ORDER BY i.upload_date DESC
         FETCH FIRST :limit ROWS ONLY
     """, {'limit': limit})
@@ -109,12 +141,11 @@ def get_latest_images(limit=16):
     # LOBオブジェクトを文字列に変換
     processed_results = []
     for row in results:
-        image_id, file_name, generation_prompt, description = row
+        image_id, file_name, generation_prompt = row
         processed_results.append((
             image_id,
             file_name,
-            generation_prompt.read() if generation_prompt else None,
-            description.read() if description else None
+            generation_prompt.read() if generation_prompt else None
         ))
 
     cursor.close()
@@ -122,17 +153,28 @@ def get_latest_images(limit=16):
 
     return processed_results
 
+def get_image_data(image_id):
+    connection = oracledb.connect(user=username, password=password, dsn=dsn)
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT image_data FROM IMAGES WHERE image_id = :image_id", {'image_id': image_id})
+    image_data = cursor.fetchone()[0].read()
+
+    cursor.close()
+    connection.close()
+
+    return image_data
+
 def load_initial_images():
     results = get_latest_images(limit=16)
     images = []
     image_info = []
-    for index, (image_id, file_name, generation_prompt, description) in enumerate(results):
+    for image_id, file_name, generation_prompt in results:
         image_data = get_image_data(image_id)
         images.append(Image.open(io.BytesIO(image_data)))
         image_info.append({
             'file_name': file_name,
-            'generation_prompt': generation_prompt,
-            'caption': description
+            'generation_prompt': generation_prompt
         })
     return images, image_info
 
@@ -145,10 +187,10 @@ def search_images(query, search_method, search_target, limit=16):
             embedding_json = json.dumps(compute_text_embeddings(query).tolist()[0])
             cursor.execute("""
                 SELECT i.image_id, i.file_name, i.generation_prompt,
-                       cie.embedding <#> :query_embedding as similarity
+                       cie.embedding <#> :query_embedding as vector_distance
                 FROM CURRENT_IMAGE_EMBEDDINGS cie
                 JOIN IMAGES i ON cie.image_id = i.image_id
-                ORDER BY similarity
+                ORDER BY vector_distance
                 FETCH FIRST :limit ROWS ONLY
             """, {'query_embedding': embedding_json, 'limit': limit})
         elif search_target == "キャプション":
@@ -165,10 +207,10 @@ def search_images(query, search_method, search_target, limit=16):
             
             cursor.execute("""
                 SELECT i.image_id, i.file_name, i.generation_prompt,
-                       id.embedding <#> :query_embedding as similarity
+                       id.embedding <#> :query_embedding as vector_distance
                 FROM IMAGE_DESCRIPTIONS id
                 JOIN IMAGES i ON id.image_id = i.image_id
-                ORDER BY similarity
+                ORDER BY vector_distance
                 FETCH FIRST :limit ROWS ONLY
             """, {'query_embedding': embedding_json, 'limit': limit})
         elif search_target == "プロンプト":
@@ -185,9 +227,9 @@ def search_images(query, search_method, search_target, limit=16):
             
             cursor.execute("""
                 SELECT i.image_id, i.file_name, i.generation_prompt,
-                       i.prompt_embedding <#> :query_embedding as similarity
+                       i.prompt_embedding <#> :query_embedding as vector_distance
                 FROM IMAGES i
-                ORDER BY similarity
+                ORDER BY vector_distance
                 FETCH FIRST :limit ROWS ONLY
             """, {'query_embedding': embedding_json, 'limit': limit})
     elif search_method == "自然言語全文検索":
@@ -212,10 +254,10 @@ def search_images(query, search_method, search_target, limit=16):
         embedding_json = json.dumps(compute_image_embeddings(query).tolist()[0])
         cursor.execute("""
             SELECT i.image_id, i.file_name, i.generation_prompt,
-                   cie.embedding <#> :query_embedding as similarity
+                   cie.embedding <#> :query_embedding as vector_distance
             FROM CURRENT_IMAGE_EMBEDDINGS cie
             JOIN IMAGES i ON cie.image_id = i.image_id
-            ORDER BY similarity
+            ORDER BY vector_distance
             FETCH FIRST :limit ROWS ONLY
         """, {'query_embedding': embedding_json, 'limit': limit})
     else:
@@ -228,14 +270,14 @@ def search_images(query, search_method, search_target, limit=16):
     for row in results:
         if search_method == "自然言語全文検索":
             image_id, file_name, generation_prompt, relevance = row
-            similarity = relevance  # OracleTextのスコアを類似度として使用
+            vector_distance = relevance  # OracleTextのスコアをベクトル距離として使用
         else:
-            image_id, file_name, generation_prompt, similarity = row
+            image_id, file_name, generation_prompt, vector_distance = row
         processed_results.append((
             image_id,
             file_name,
             generation_prompt.read() if generation_prompt else None,
-            similarity
+            vector_distance
         ))
 
     cursor.close()
@@ -243,29 +285,19 @@ def search_images(query, search_method, search_target, limit=16):
 
     return processed_results
 
-def get_image_data(image_id):
-    connection = oracledb.connect(user=username, password=password, dsn=dsn)
-    cursor = connection.cursor()
 
-    cursor.execute("SELECT image_data FROM IMAGES WHERE image_id = :image_id", {'image_id': image_id})
-    image_data = cursor.fetchone()[0].read()
-
-    cursor.close()
-    connection.close()
-
-    return image_data
 
 def search(query, search_method, search_target, page=1):
     results = search_images(query, search_method, search_target, limit=16)
     images = []
     image_info = []
-    for index, (image_id, file_name, generation_prompt, similarity) in enumerate(results):
+    for image_id, file_name, generation_prompt, vector_distance in results:
         image_data = get_image_data(image_id)
         images.append(Image.open(io.BytesIO(image_data)))
         image_info.append({
             'file_name': file_name,
             'generation_prompt': generation_prompt,
-            'similarity': similarity if similarity is not None else 'N/A'
+            'vector_distance': vector_distance if vector_distance is not None else 'N/A'
         })
     return images, image_info
 
@@ -301,14 +333,12 @@ with gr.Blocks(title="画像検索") as demo:
             image_input = gr.Image(label="画像による検索", type="pil", height=280, width=500, interactive=False)
     with gr.Row():    
         with gr.Column(scale=7):
-            #initial_images, initial_image_info = load_initial_images()
             gallery = gr.Gallery(label="検索結果", show_label=False, elem_id="gallery", columns=[8], rows=[2], height=380, interactive=False, show_download_button=True)
-            #image_info_state.value = initial_image_info
     
     with gr.Row():
         with gr.Column(scale=1):
             file_name = gr.Textbox(label="ファイル名")
-            distance = gr.Textbox(label="ベクトル距離（-1 x 内積）")
+            distance = gr.Textbox(label="ベクトル距離（-1 x 内積) or 全文検索スコア")
         with gr.Column(scale=2):        
             generation_prompt = gr.Textbox(label="画像生成プロンプト", lines=4)
         with gr.Column(scale=2):
@@ -327,7 +357,9 @@ with gr.Blocks(title="画像検索") as demo:
             images, image_info = load_initial_images()
             image_input_update = gr.update(interactive=search_method == "画像ベクトル検索")
             text_input_update = gr.update(interactive=search_method != "画像ベクトル検索")
-        return images, image_info, text_input_update, image_input_update, gr.update(interactive=True), gr.update(selected_index=None)
+        label = "スコア" if search_method == "自然言語全文検索" else "距離"
+        gallery_images = [(img, f"{label}: {round(float(info['vector_distance']), 3) if info['vector_distance'] != 'N/A' else 'N/A'}") for img, info in zip(images, image_info)]
+        return gallery_images, image_info, text_input_update, image_input_update, gr.update(interactive=True), gr.update(selected_index=None)
 
     def clear_components(search_method):
         return (
@@ -366,7 +398,7 @@ with gr.Blocks(title="画像検索") as demo:
         selected_index = evt.index
         if 0 <= selected_index < len(image_info):
             info = image_info[selected_index]
-            similarity = info.get('similarity', 'N/A')
+            vector_distance = info.get('vector_distance', 'N/A')
             
             # データベースからdescriptionを取得
             connection = oracledb.connect(user=username, password=password, dsn=dsn)
@@ -390,7 +422,7 @@ with gr.Blocks(title="画像検索") as demo:
             # descriptionを連結
             combined_description = "\n\n".join(description_texts) if description_texts else "説明なし"
             
-            return info['file_name'], str(similarity), info['generation_prompt'], combined_description
+            return info['file_name'], str(vector_distance), info['generation_prompt'], combined_description
         else:
             return "選択エラー", "N/A", "選択エラー", "選択エラー"
     
