@@ -196,7 +196,8 @@ def search_images(query, search_method, search_target, limit=16):
             embedding_json = json.dumps(compute_text_embeddings(query).tolist()[0])
             cursor.execute("""
                 SELECT i.image_id, i.file_name, i.generation_prompt,
-                       cie.embedding <#> :query_embedding as vector_distance
+                       cie.embedding <#> :query_embedding as vector_distance,
+                       'vector' as method
                 FROM CURRENT_IMAGE_EMBEDDINGS cie
                 JOIN IMAGES i ON cie.image_id = i.image_id
                 ORDER BY vector_distance
@@ -216,7 +217,8 @@ def search_images(query, search_method, search_target, limit=16):
             
             cursor.execute("""
                 SELECT i.image_id, i.file_name, i.generation_prompt,
-                       id.embedding <#> :query_embedding as vector_distance
+                       id.embedding <#> :query_embedding as vector_distance,
+                       'vector' as method
                 FROM IMAGE_DESCRIPTIONS id
                 JOIN IMAGES i ON id.image_id = i.image_id
                 ORDER BY vector_distance
@@ -236,7 +238,8 @@ def search_images(query, search_method, search_target, limit=16):
             
             cursor.execute("""
                 SELECT i.image_id, i.file_name, i.generation_prompt,
-                       i.prompt_embedding <#> :query_embedding as vector_distance
+                       i.prompt_embedding <#> :query_embedding as vector_distance,
+                       'vector' as method
                 FROM IMAGES i
                 ORDER BY vector_distance
                 FETCH FIRST :limit ROWS ONLY
@@ -244,7 +247,8 @@ def search_images(query, search_method, search_target, limit=16):
     elif search_method == "自然言語全文検索":
         if search_target == "キャプション":
             cursor.execute("""
-                SELECT i.image_id, i.file_name, i.generation_prompt, score(1) as relevance
+                SELECT i.image_id, i.file_name, i.generation_prompt, score(1) as relevance,
+                       'text' as method
                 FROM IMAGES i
                 JOIN IMAGE_DESCRIPTIONS id ON i.image_id = id.image_id
                 WHERE CONTAINS(id.description, :query, 1) > 0
@@ -253,7 +257,8 @@ def search_images(query, search_method, search_target, limit=16):
             """, {'query': query, 'limit': limit})
         elif search_target == "プロンプト":
             cursor.execute("""
-                SELECT image_id, file_name, generation_prompt, score(1) as relevance
+                SELECT image_id, file_name, generation_prompt, score(1) as relevance,
+                       'text' as method
                 FROM IMAGES
                 WHERE CONTAINS(generation_prompt, :query, 1) > 0
                 ORDER BY relevance DESC
@@ -263,30 +268,109 @@ def search_images(query, search_method, search_target, limit=16):
         embedding_json = json.dumps(compute_image_embeddings(query).tolist()[0])
         cursor.execute("""
             SELECT i.image_id, i.file_name, i.generation_prompt,
-                   cie.embedding <#> :query_embedding as vector_distance
+                   cie.embedding <#> :query_embedding as vector_distance,
+                   'vector' as method
             FROM CURRENT_IMAGE_EMBEDDINGS cie
             JOIN IMAGES i ON cie.image_id = i.image_id
             ORDER BY vector_distance
             FETCH FIRST :limit ROWS ONLY
         """, {'query_embedding': embedding_json, 'limit': limit})
+    elif search_method == "ハイブリッド検索":
+        if search_target == "キャプション":
+            # クエリの埋め込みベクトルを取得
+            embed_text_detail = EmbedTextDetails()
+            embed_text_detail.serving_mode = OnDemandServingMode(model_id=model_id)
+            embed_text_detail.inputs = [query]
+            embed_text_detail.truncate = "NONE"
+            embed_text_detail.compartment_id = compartment_id
+            embed_text_detail.is_echo = False
+            embed_text_detail.input_type = "SEARCH_QUERY"
+
+            embed_text_response = generative_ai_inference_client.embed_text(embed_text_detail)
+            embedding_json = json.dumps(embed_text_response.data.embeddings[0])
+
+            cursor.execute("""
+                SELECT * FROM (
+                    (SELECT i.image_id, i.file_name, i.generation_prompt,
+                           id.embedding <#> :query_embedding AS score,
+                           'vector' AS method
+                    FROM IMAGE_DESCRIPTIONS id
+                    JOIN IMAGES i ON id.image_id = i.image_id
+                    ORDER BY score ASC
+                    FETCH FIRST :half_limit ROWS ONLY)
+                    UNION ALL
+                    (SELECT i.image_id, i.file_name, i.generation_prompt,
+                           score(1) AS score,
+                           'text' AS method
+                    FROM IMAGES i
+                    JOIN IMAGE_DESCRIPTIONS id ON i.image_id = id.image_id
+                    WHERE CONTAINS(id.description, :query, 1) > 0
+                    ORDER BY score DESC
+                    FETCH FIRST :half_limit ROWS ONLY)
+                )
+                ORDER BY method, score
+                FETCH FIRST :limit ROWS ONLY
+            """, {
+                'query_embedding': embedding_json,
+                'query': query,
+                'half_limit': int(limit / 2),
+                'limit': limit
+            })
+        elif search_target == "プロンプト":
+            # クエリの埋め込みベクトルを取得
+            embed_text_detail = EmbedTextDetails()
+            embed_text_detail.serving_mode = OnDemandServingMode(model_id=model_id)
+            embed_text_detail.inputs = [query]
+            embed_text_detail.truncate = "NONE"
+            embed_text_detail.compartment_id = compartment_id
+            embed_text_detail.is_echo = False
+            embed_text_detail.input_type = "SEARCH_QUERY"
+
+            embed_text_response = generative_ai_inference_client.embed_text(embed_text_detail)
+            embedding_json = json.dumps(embed_text_response.data.embeddings[0])
+
+            cursor.execute("""
+                SELECT * FROM (
+                    (SELECT i.image_id, i.file_name, i.generation_prompt,
+                           i.prompt_embedding <#> :query_embedding AS score,
+                           'vector' AS method
+                    FROM IMAGES i
+                    ORDER BY score ASC
+                    FETCH FIRST :half_limit ROWS ONLY)
+                    UNION ALL
+                    (SELECT i.image_id, i.file_name, i.generation_prompt,
+                           score(1) AS score,
+                           'text' AS method
+                    FROM IMAGES i
+                    WHERE CONTAINS(generation_prompt, :query, 1) > 0
+                    ORDER BY score DESC
+                    FETCH FIRST :half_limit ROWS ONLY)
+                )
+                ORDER BY method, score
+                FETCH FIRST :limit ROWS ONLY
+            """, {
+                'query_embedding': embedding_json,
+                'query': query,
+                'half_limit': int(limit / 2),
+                'limit': limit
+            })
+        else:
+            raise ValueError("ハイブリッド検索での無効な検索対象です")
     else:
-        raise ValueError("Invalid search method")
+        raise ValueError("無効な検索方法です")
 
     results = cursor.fetchall()
     
     # LOBオブジェクトを文字列に変換
     processed_results = []
     for row in results:
-        if search_method == "自然言語全文検索":
-            image_id, file_name, generation_prompt, relevance = row
-            vector_distance = relevance  # OracleTextのスコアをベクトル距離として使用
-        else:
-            image_id, file_name, generation_prompt, vector_distance = row
+        image_id, file_name, generation_prompt, score, method = row
         processed_results.append((
             image_id,
             file_name,
-            generation_prompt.read() if generation_prompt else None,
-            vector_distance
+            generation_prompt.read() if hasattr(generation_prompt, 'read') else generation_prompt,
+            score,
+            method
         ))
 
     cursor.close()
@@ -392,27 +476,59 @@ with gr.Blocks(title="画像検索") as demo:
 
 
     def search_wrapper(text_query, image_query, search_method, search_target):
-        if text_query:
-            images, image_info = search(text_query, search_method, search_target)
-            image_input_update = gr.update(value=None, interactive=False)
-            text_input_update = gr.update(interactive=True)
-            prev_button_update = gr.update(interactive=False)
-            next_button_update = gr.update(interactive=False)
-        elif image_query is not None:
-            images, image_info = search(image_query, search_method, search_target)
-            image_input_update = gr.update(interactive=True)
-            text_input_update = gr.update(interactive=False)
-            prev_button_update = gr.update(interactive=False)
-            next_button_update = gr.update(interactive=False)
-        else: # 検索条件がない場合は、初期画像（最近アップロードされた画像）を表示
+        if text_query or image_query is not None:
+            results = search_images(text_query if text_query else image_query, search_method, search_target)
+            
+            # ベクトル検索結果と全文検索結果を分離
+            vector_results = []
+            text_results = []
+            vector_info = []
+            text_info = []
+            
+            for result in results:
+                if isinstance(result, tuple) and len(result) == 5:
+                    image_id, file_name, generation_prompt, score, method = result
+                else:
+                    continue  # 予期しない結果はスキップ
+
+                image_data = get_image_data(image_id)
+                img = Image.open(io.BytesIO(image_data))
+                
+                # 情報を構築
+                info = {
+                    'file_name': file_name,
+                    'generation_prompt': generation_prompt,
+                    'vector_distance': score if score is not None else 'N/A',
+                    'method': method
+                }
+
+                if method == 'vector':
+                    caption = f"ベクトル距離: {round(float(score), 3) if isinstance(score, (int, float)) else score}"
+                    vector_results.append((img, caption))
+                    vector_info.append(info)
+                elif method == 'text':
+                    caption = f"スコア: {round(float(score), 3) if isinstance(score, (int, float)) else score}"
+                    text_results.append((img, caption))
+                    text_info.append(info)
+                else:
+                    caption = f"{method.capitalize()} - スコア: {round(float(score), 3) if isinstance(score, (int, float)) else score}"
+                    vector_results.append((img, caption))
+                    vector_info.append(info)
+
+            # ギャラリーの画像と情報を統合
+            gallery_images = vector_results + text_results
+            image_info = vector_info + text_info
+
+            page_info_text = ""
+
+            # ギャラリーの更新と他のUI要素の更新
+            return gallery_images, image_info, gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True), gr.update(selected_index=None), gr.update(interactive=False), gr.update(interactive=False), page_info_text
+        else:
+            # 初期表示の処理
             images, image_info = load_initial_images()
-            image_input_update = gr.update(interactive=search_method == "画像ベクトル検索")
-            text_input_update = gr.update(interactive=search_method != "画像ベクトル検索")
-            prev_button_update = gr.update(interactive=True)
-            next_button_update = gr.update(interactive=True)
-        label = "スコア" if search_method == "自然言語全文検索" else "距離"
-        gallery_images = [(img, f"{label}: {round(float(info['vector_distance']), 3)}" if info['vector_distance'] != 'N/A' else None) for img, info in zip(images, image_info)]
-        return gallery_images, image_info, text_input_update, image_input_update, gr.update(interactive=True), gr.update(selected_index=None), prev_button_update, next_button_update
+            gallery_images = [(img, None) for img in images]
+            page_info_text = f"1 / {get_total_pages()}"
+            return gallery_images, image_info, gr.update(interactive=True), gr.update(interactive=False), gr.update(interactive=True), gr.update(selected_index=None), gr.update(interactive=True), gr.update(interactive=True), page_info_text
 
 
     def clear_components(search_method):
@@ -431,10 +547,8 @@ with gr.Blocks(title="画像検索") as demo:
     def update_search_method(search_target):
         if search_target == "画像":
             return gr.update(choices=["自然言語ベクトル検索", "画像ベクトル検索"], value="自然言語ベクトル検索")
-        elif search_target == "キャプション":
-            return gr.update(choices=["自然言語ベクトル検索", "自然言語全文検索"], value="自然言語ベクトル検索")
-        elif search_target == "プロンプト":
-            return gr.update(choices=["自然言語ベクトル検索", "自然言語全文検索"], value="自然言語ベクトル検索")
+        elif search_target == "キャプション" or search_target == "プロンプト":
+            return gr.update(choices=["自然言語ベクトル検索", "自然言語全文検索", "ハイブリッド検索"], value="自然言語ベクトル検索")
         else:
             return gr.update(choices=[], value=None)
         
@@ -443,6 +557,12 @@ with gr.Blocks(title="画像検索") as demo:
             return gr.update(value=None, interactive=False)
         else:
             return gr.update(interactive=True)
+                
+    def update_image_input(search_method):
+        if search_method == "画像ベクトル検索":
+            return gr.update(interactive=True)
+        else:
+            return gr.update(value=None, interactive=False)
             
     def update_image_input(search_method):
         if search_method == "画像ベクトル検索":
@@ -455,6 +575,8 @@ with gr.Blocks(title="画像検索") as demo:
             return gr.update(choices=["キャプション", "プロンプト"], value="キャプション")
         elif search_method == "画像ベクトル検索":
             return gr.update(choices=["画像"], value="画像")
+        elif search_method == "ハイブリッド検索":
+            return gr.update(choices=["キャプション", "プロンプト"], value="キャプション")
         else:
             return gr.update(choices=["画像", "キャプション", "プロンプト"], value="画像")
 
@@ -490,7 +612,7 @@ with gr.Blocks(title="画像検索") as demo:
         else:
             return "選択エラー", "N/A", "選択エラー", "選択エラー"
     
-    search_button.click(search_wrapper, inputs=[text_input, image_input, search_method, search_target], outputs=[gallery, image_info_state, text_input, image_input, search_button, gallery, prev_button, next_button])
+    search_button.click(search_wrapper, inputs=[text_input, image_input, search_method, search_target], outputs=[gallery, image_info_state, text_input, image_input, search_button, gallery, prev_button, next_button, page_info])
     clear_button.click(clear_components, inputs=[search_method], outputs=[text_input, image_input, search_button, gallery, image_info_state, file_name, distance, generation_prompt, caption])
     search_target.change(update_search_method, inputs=[search_target], outputs=[search_method])
     search_method.change(update_text_input, inputs=[search_method], outputs=[text_input])
