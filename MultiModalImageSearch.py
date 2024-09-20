@@ -320,17 +320,17 @@ with gr.Blocks(title="画像検索") as demo:
     with gr.Row():
         with gr.Column(scale=4):
             with gr.Row():
-                with gr.Column(scale=3):
-                    search_method = gr.Radio(
-                        ["自然言語ベクトル検索", "自然言語全文検索", "画像ベクトル検索"],
-                        label="検索方法",
-                        value="自然言語ベクトル検索"
-                    )
-                with gr.Column(scale=2):
+                with gr.Column(scale=1):
                     search_target = gr.Radio(
                         ["画像", "キャプション", "プロンプト"],
                         label="検索対象",
                         value="画像"
+                    )
+                with gr.Column(scale=1):
+                    search_method = gr.Radio(
+                        ["自然言語ベクトル検索", "画像ベクトル検索"],
+                        label="検索方法",
+                        value="自然言語ベクトル検索"
                     )
             with gr.Row():
                 text_input = gr.Textbox(label="検索テキスト", lines=2)
@@ -340,7 +340,7 @@ with gr.Blocks(title="画像検索") as demo:
                 with gr.Column(scale=1):
                     clear_button = gr.Button("クリア")
         with gr.Column(scale=1):
-            image_input = gr.Image(label="画像による検索", type="pil", height=280, width=500, interactive=False)
+            image_input = gr.Image(label="検索画像", type="pil", height=280, width=500, interactive=False)
     with gr.Row():    
         with gr.Column(scale=7):
             gallery = gr.Gallery(label="検索結果", show_label=False, elem_id="gallery", columns=[8], rows=[2], height=380, interactive=False, show_download_button=True)
@@ -428,12 +428,22 @@ with gr.Blocks(title="画像検索") as demo:
             gr.update(value="")   # caption
         )
 
+    def update_search_method(search_target):
+        if search_target == "画像":
+            return gr.update(choices=["自然言語ベクトル検索", "画像ベクトル検索"], value="自然言語ベクトル検索")
+        elif search_target == "キャプション":
+            return gr.update(choices=["自然言語ベクトル検索", "自然言語全文検索"], value="自然言語ベクトル検索")
+        elif search_target == "プロンプト":
+            return gr.update(choices=["自然言語ベクトル検索", "自然言語全文検索"], value="自然言語ベクトル検索")
+        else:
+            return gr.update(choices=[], value=None)
+        
     def update_text_input(search_method):
         if search_method == "画像ベクトル検索":
             return gr.update(value=None, interactive=False)
         else:
             return gr.update(interactive=True)
-        
+            
     def update_image_input(search_method):
         if search_method == "画像ベクトル検索":
             return gr.update(interactive=True)
@@ -482,9 +492,10 @@ with gr.Blocks(title="画像検索") as demo:
     
     search_button.click(search_wrapper, inputs=[text_input, image_input, search_method, search_target], outputs=[gallery, image_info_state, text_input, image_input, search_button, gallery, prev_button, next_button])
     clear_button.click(clear_components, inputs=[search_method], outputs=[text_input, image_input, search_button, gallery, image_info_state, file_name, distance, generation_prompt, caption])
-    search_method.change(update_image_input, inputs=[search_method], outputs=[image_input])
+    search_target.change(update_search_method, inputs=[search_target], outputs=[search_method])
     search_method.change(update_text_input, inputs=[search_method], outputs=[text_input])
-    search_method.change(update_search_target, inputs=[search_method], outputs=[search_target])
+    search_method.change(update_image_input, inputs=[search_method], outputs=[image_input])
+
     gallery.select(on_select, inputs=[image_info_state], outputs=[file_name, distance, generation_prompt, caption])
     next_button.click(next_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page, page_info])
     prev_button.click(prev_page, inputs=[current_page], outputs=[gallery, image_info_state, prev_button, next_button, current_page, page_info])
