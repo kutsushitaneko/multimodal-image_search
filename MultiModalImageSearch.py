@@ -1,3 +1,4 @@
+import spaces
 import os
 import io
 from typing import Union, List
@@ -13,6 +14,7 @@ import oci
 from oci.config import from_file
 from oci.generative_ai_inference import GenerativeAiInferenceClient
 from oci.generative_ai_inference.models import EmbedTextDetails, OnDemandServingMode
+from huggingface_hub import login
 
 _ = load_dotenv(find_dotenv())
 
@@ -24,6 +26,7 @@ password = os.getenv("DB_PASSWORD")
 dsn = os.getenv("DB_DSN")
 
 # Japanese Stable CLIPモデルのロード
+login(os.getenv('HF_TOKEN'))
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model_path = "stabilityai/japanese-stable-clip-vit-l-16"
 model = AutoModel.from_pretrained(model_path, trust_remote_code=True).eval().to(device)
@@ -183,6 +186,7 @@ def get_latest_images(limit=16, offset=0):
 
     return processed_results
 
+@spaces.GPU(duration=60)
 def search_images(query, search_method, search_target, limit=16):
     connection = oracledb.connect(user=username, password=password, dsn=dsn)
     cursor = connection.cursor()
