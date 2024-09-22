@@ -8,3 +8,5 @@ protobuf
 oracledb
 pillow
 python-dotenv
+oci
+cohere
