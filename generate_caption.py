@@ -18,9 +18,10 @@ model = Qwen2VLForConditionalGeneration.from_pretrained(
 
 
 # プロセッサの初期化
-processor = AutoProcessor.from_pretrained("Qwen/Qwen2-VL-7B-Instruct")
-
-
+processor = AutoProcessor.from_pretrained("Qwen/Qwen2-VL-7B-Instruct",
+    min_pixels=256 * 28 * 28,
+    max_pixels=1280 * 28 * 28
+)
 
 def process_image(image_path):
     messages = [
