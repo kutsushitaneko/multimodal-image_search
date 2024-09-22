@@ -5,7 +5,8 @@ CREATE TABLE IMAGES (
     file_name VARCHAR2(255),
     file_type VARCHAR2(50),
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    generation_prompt CLOB
+    generation_prompt CLOB,
+    PROMPT_EMBEDDING VECTOR
 );
 
 -- EMBEDDING_MODELS テーブル
@@ -36,6 +37,7 @@ CREATE TABLE IMAGE_DESCRIPTIONS (
     description_id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     image_id NUMBER,
     description CLOB,
+    embedding VECTOR,
     CONSTRAINT fk_image_description FOREIGN KEY (image_id) REFERENCES IMAGES(image_id)
 );
 
@@ -52,6 +54,14 @@ PARAMETERS ('LEXER japanese_lexer SYNC (ON COMMIT)');
 CREATE INDEX idx_image_description ON IMAGE_DESCRIPTIONS(description) 
 INDEXTYPE IS CTXSYS.CONTEXT 
 PARAMETERS ('LEXER japanese_lexer SYNC (ON COMMIT)');
+
+-- PROMPT_EMBEDDING カラムのベクトルインデックス作成
+CREATE VECTOR INDEX idx_prompt_embedding ON IMAGES(PROMPT_EMBEDDING) ORGANIZATION NEIGHBOR PARTITIONS
+WITH DISTANCE DOT;
+
+-- embedding カラムのベクトルインデックス作成
+CREATE VECTOR INDEX idx_image_description_embedding ON IMAGE_DESCRIPTIONS(embedding) ORGANIZATION NEIGHBOR PARTITIONS
+WITH DISTANCE DOT;
 
 -- 現在使用中のモデルを取得するビュー
 CREATE VIEW CURRENT_EMBEDDING_MODEL AS
