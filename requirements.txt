@@ -10,3 +10,4 @@ pillow
 python-dotenv
 oci
 cohere
+spaces

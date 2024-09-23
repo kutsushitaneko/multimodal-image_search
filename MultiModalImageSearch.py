@@ -563,7 +563,9 @@ with gr.Blocks(title="画像検索") as demo:
     def search_wrapper(text_query, image_query, search_method, search_target, reranking):
         if text_query or image_query is not None:
             results = search_images(text_query if text_query else image_query, search_method, search_target, reranking)
-                
+
+            if not results:  # 検索結果が空の場合
+                return [], [], gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True), gr.update(selected_index=None), gr.update(interactive=False), gr.update(interactive=False), ""  
             # ベクトル検索結果と全文検索結果を分離
             vector_results = []
             text_results = []
