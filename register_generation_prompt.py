@@ -33,9 +33,9 @@ def process_image(image_path):
 
     try:
         # ファイル名からimage_idを取得
-        file_name = os.path.basename(image_path)
+        file_name = os.path.basename(image_path).lower()
         cursor.execute("""
-            SELECT image_id FROM IMAGES WHERE file_name = :file_name
+            SELECT image_id FROM IMAGES WHERE LOWER(file_name) = :file_name
         """, [file_name])
         result = cursor.fetchone()
         if not result:

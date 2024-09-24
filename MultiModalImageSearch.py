@@ -676,7 +676,7 @@ with gr.Blocks(title="画像検索") as demo:
             page_info_text = ""
 
             # ギャラリーの更新と他のUI要素の更新
-            return gallery_images, image_info, gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True), gr.update(selected_index=None), gr.update(interactive=False), gr.update(interactive=False), page_info_text
+            return gallery_images, image_info, gr.update(interactive=not (search_target == "画像" and search_method == "画像ベクトル検索")), gr.update(interactive=search_target == "画像" and search_method == "画像ベクトル検索"), gr.update(interactive=True), gr.update(selected_index=None), gr.update(interactive=False), gr.update(interactive=False), page_info_text
         else:
             # 初期表示の処理
             images, image_info = load_initial_images()
