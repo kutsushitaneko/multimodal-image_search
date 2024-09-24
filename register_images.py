@@ -40,11 +40,13 @@ cursor.execute("""
 result = cursor.fetchone()
 
 if result is None:
+    new_model_id = cursor.var(int)
     cursor.execute("""
         INSERT INTO EMBEDDING_MODELS (model_name, model_version, is_current, vector_dimension)
         VALUES (:1, :2, :3, :4)
-    """, ("Japanese Stable CLIP", "japanese-stable-clip-vit-l-16", 'Y', 768))
-    model_id = cursor.lastrowid
+        RETURNING model_id INTO :5
+    """, ("Japanese Stable CLIP", "japanese-stable-clip-vit-l-16", 'Y', 768, new_model_id))
+    model_id = new_model_id.getvalue()[0]
     connection.commit()
     print("EMBEDDING_MODELSテーブルに新しいモデルを挿入しました。")
 else:
