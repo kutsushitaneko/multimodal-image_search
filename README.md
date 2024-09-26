@@ -30,7 +30,7 @@ https://github.com/kutsushitaneko/multimodal-image_search
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/17c6b874-85ce-6783-7665-a91bd6d28d13.png)
 
 ### 画像で画像を検索
-アップロードした画像と __類似した特徴\\ を持つ画像を検索
+アップロードした画像と __類似した特徴__ を持つ画像を検索
 
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/4698ce1a-c6d2-b630-d661-fa8185755320.png)
 
