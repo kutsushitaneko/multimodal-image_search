@@ -6,18 +6,11 @@ from PIL import Image
 import time
 from tqdm import tqdm
 
-# モデルの選択（2B モデルか 7B モデルかを選択）
-model_id = "Qwen/Qwen2-VL-7B-Instruct"
-
-
 # モデルをロード
-print(f"loading {model_id}...")
+model_id = "Qwen/Qwen2-VL-7B-Instruct"
 model = Qwen2VLForConditionalGeneration.from_pretrained(
     model_id, torch_dtype="auto", device_map="auto"
 )
-
-
-# プロセッサの初期化
 processor = AutoProcessor.from_pretrained("Qwen/Qwen2-VL-7B-Instruct",
     min_pixels=256 * 28 * 28,
     max_pixels=1280 * 28 * 28
