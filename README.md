@@ -23,6 +23,18 @@ https://oracle-code-tokyo-dev.connpass.com/event/327094/
 
 https://github.com/kutsushitaneko/multimodal-image_search
 
+| 目次 |
+|:---|
+| [はじめに](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E3%81%AF%E3%81%98%E3%82%81%E3%81%AB) |
+| [アプリケーションの紹介](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E3%82%A2%E3%83%97%E3%83%AA%E3%82%B1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%81%AE%E7%B4%B9%E4%BB%8B) |
+| [アプリケーションのアーキテクチャ](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E3%82%A2%E3%83%97%E3%83%AA%E3%82%B1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%81%AE%E3%82%A2%E3%83%BC%E3%82%AD%E3%83%86%E3%82%AF%E3%83%81%E3%83%A3) |
+| [使用する主要な要素技術](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E4%BD%BF%E7%94%A8%E3%81%99%E3%82%8B%E4%B8%BB%E8%A6%81%E3%81%AA%E8%A6%81%E7%B4%A0%E6%8A%80%E8%A1%93) |
+| [使用するサービス・モデル・フレームワーク](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E4%BD%BF%E7%94%A8%E3%81%99%E3%82%8B%E3%82%B5%E3%83%BC%E3%83%93%E3%82%B9%E3%83%A2%E3%83%87%E3%83%AB%E3%83%95%E3%83%AC%E3%83%BC%E3%83%A0%E3%83%AF%E3%83%BC%E3%82%AF) |
+| [サンプルコードの説明](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E3%82%B5%E3%83%B3%E3%83%97%E3%83%AB%E3%82%B3%E3%83%BC%E3%83%89%E3%81%AE%E8%AA%AC%E6%98%8E) |
+| [セットアップ](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E3%82%BB%E3%83%83%E3%83%88%E3%82%A2%E3%83%83%E3%83%97) |
+| [画像データベース事前準備](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E7%94%BB%E5%83%8F%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9%E4%BA%8B%E5%89%8D%E6%BA%96%E5%82%99) |
+| [検索](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E6%A4%9C%E7%B4%A2) |
+| [お疲れ様でした](https://qiita.com/yuji-arakawa/items/70470b348c90adb82b7f#%E3%81%8A%E7%96%B2%E3%82%8C%E6%A7%98%E3%81%A7%E3%81%97%E3%81%9F) |
 ## アプリケーションの紹介
 ### 自然言語で画像を検索
 入力した検索テキストと __類似した特徴__ を持つ画像を検索
@@ -30,7 +42,7 @@ https://github.com/kutsushitaneko/multimodal-image_search
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/17c6b874-85ce-6783-7665-a91bd6d28d13.png)
 
 ### 画像で画像を検索
-アップロードした画像と __類似した特徴\\ を持つ画像を検索
+アップロードした画像と __類似した特徴__ を持つ画像を検索
 
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/4698ce1a-c6d2-b630-d661-fa8185755320.png)
 
@@ -72,9 +84,12 @@ https://github.com/kutsushitaneko/multimodal-image_search
 - 画像や文書などの特徴を数値ベクトルの形で表現したものを特徴ベクトルと呼びます
 - 事物には多様な特徴があり特徴ベクトルの次元数は数百から数千に及びます
 - 似た事物は、似た特徴を持ち、この多次元のベクトル空間の中で近くに位置します
+
+![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/057e78d2-be25-3082-a10b-9cc00e1c9874.png)
+
 - 似たものを見つけるには、特徴ベクトル間の距離を計算して、最も近くに位置する特徴ベクトルを見つければよいこととなります
 
-例えば、この下図のイメージでは、猫の画像の特徴ベクトルをクエリーとして、それに一番近い特徴ベクトルを検索することで、類似した画像を見つけています。
+例えば、下図のイメージでは、猫の画像の特徴ベクトルをクエリーとして、それに一番近い特徴ベクトルを検索することで、類似した画像を見つけています。
 一方で、犬の画像や自動車の画像は、猫とは異なる特徴を持っているため猫の特徴を持ったクエリーベクトルとは、ベクトル空間内で遠くに位置しています。
 （高次元空間では「次元の呪い」と呼ばれる特有の難しさがあり、実際の応用ではベクトル間の角度に基づくコサイン類似度やコサイン距離（1 - コサイン類似度）が用いられることが多い。）
 
@@ -131,13 +146,24 @@ __CLIPを利用した画像分類アプリケーション作成の記事__
 
 https://qiita.com/yuji-arakawa/items/042937eaf16fa00cf491
 
-さらに、CLIP の応用は、画像検索や分類だけに限定されるものではありません。画像生成AIとして有名な Open AI の DALL-E2、Stability AI の Stable Diffusion や Black Forest Labs の FLUX.1 等のプロンプトの言語理解と画像生成のガイドの機能を担うなど幅広い分野に応用されています。
+#### CLIPの画像生成への応用
+CLIP の応用は、画像検索や分類だけに限定されるものではありません。画像生成AIとして有名な Open AI の DALL-E2、Stability AI の Stable Diffusion や Black Forest Labs の FLUX.1 等のプロンプトの言語理解と画像生成のガイドの機能を担うなど幅広い分野に応用されています。
+
+![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/58fe3692-b44b-a0fc-6a66-fba7f4f1832b.png)
+OpenAI の論文（Hierarchical Text-Conditional Image Generation with CLIP Latents）から引用
+
+上図の点線より上は、CLIPの学習過程。下は、CLIPを活用した画像生成の仕組み。
+- CLIP のテキストエンコーダーを使って、画像生成プロンプト（コーギーが炎を放つトランペットを吹いている）をCLIPのテキストベクトルへ変換する
+- CLIPのテキストベクトル ≒ CLIPの画像ベクトル
+- CLIPの画像ベクトルを prior（拡散モデルなど）で画像デコーダー用の画像ベクトルに変換
+- 画像デコーダーが画像ベクトルから「コーギーが炎を放つトランペットを吹いている」画像を生成する
 
 :::note
-「猫」というテキストプロンプトで「猫の画像」を生成する仕組み
+テキストプロンプトのガイダンスにより画像を生成する仕組みは上記の unCLIP 以外にも様々なものがあります
+__例：CLIPガイダンスにより「猫」というテキストプロンプトで「猫の画像」を生成する仕組みのイメージ__
 - ポイント：__猫のテキストベクトル　≒　猫の画像ベクトル__
 - 手順の概要：
-    - 逆拡散過程の途中の生成画像と猫のテキストベクトルの類似度（内積）を計算する。これは、生成された画像と猫画像の類似度を計算したことになる（猫のテキストベクトル　≒　猫の画像ベクトルなので）
+    - 逆拡散過程の途中の生成画像と猫のテキストベクトルの類似度を計算する。これは、生成された画像と猫画像の類似度を計算したことになる（猫のテキストベクトル　≒　猫の画像ベクトルなので）
     - この類似度が高くなるように生成画像を微調整する
     - 微調整された画像を元に逆拡散過程、類似度計算、微調整を繰り返す
     - 生成画像は猫画像へ近づいていく
@@ -762,6 +788,15 @@ def do_rerank(query, documents, top_n):
      - `return_documents`: True（元の文書情報も結果に含める）
 
 ## セットアップ
+### セットアップのロードマップ
+```mermaid
+graph TD
+    A[開始] --> B[前提条件の確認]
+    B --> C[サンプルアプリケーションのセットアップ]
+    C --> D[データベースの準備]
+    D --> E[環境変数の設定]
+    E --> F[終了]
+```
 ### 前提条件
 #### GPU
 画像のキャプション生成（OCR含む）には、CUDA対応の GPU が必要です。それ以外の機能は、CPU のみで動作します。GPU 環境を長時間使用したくない場合は、キャプション生成のみ GPU 環境で実行することができます。
@@ -1012,9 +1047,19 @@ HF_TOKEN=xxxxxxxxx
 COHERE_API_KEY=xxxxxxxxx
 ```
 
-## 使い方
-### 事前準備
-#### 画像キャプションの生成
+## 画像データベース事前準備
+画像データベースの事前準備のロードマップ
+```mermaid
+graph TD
+    A[開始] --> B[（オプション）画像キャプションの生成]
+    A --> C[データベースへの画像の登録]
+    B --> C
+    C --> D1[画像生成プロンプトの抽出と登録]
+    D1 --> D2[（オプション）画像のキャプションとテキストベクトルの登録]
+    D1 --> E[終了]
+    D2 --> E
+```
+### 画像キャプションの生成
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/c38e732e-4361-baa1-dd0d-135d82f17313.png)
 
 __この手順だけは、GPUが搭載されたサーバーが必要です。__
@@ -1022,12 +1067,12 @@ __この手順だけは、GPUが搭載されたサーバーが必要です。__
 ```
 python generate_caption.py
 ```
-#### データベースへの画像の登録
+### データベースへの画像の登録
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/52702b2a-720d-9311-c69d-9a18a294cab6.png)
 
 ※以下の手順はすべて GPU を搭載していないサーバーでも実行できます。
 
-##### Hugging Face へログイン
+#### Hugging Face へログイン
 
 Japanese Stable CLIP のモデルを使用するために、Hugging Face へログインします。
 
@@ -1065,14 +1110,14 @@ Token is valid (permission: read).
 Your token has been saved to C:\Users\xxxx\.cache\huggingface\token
 Login successful
 ```
-##### 画像のデータベースへの登録
+#### 画像のデータベースへの登録
 - images ディレクトリに画像ファイル群を保存します（リポジトリをクローンした場合はサンプルの画像が入っています）
 - register_images.py を実行して、データベースに画像ファイル群を登録します
     ```
     python register_images.py
     ```
 
-#### 画像生成プロンプト（PNGファイルのテキストチャンク情報）の抽出と登録
+### 画像生成プロンプト（PNGファイルのテキストチャンク情報）の抽出と登録
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/4b198e0b-1870-379a-1d8c-a3f840f2e520.png)
 
 PNGファイルが AUTOMATIC1111 もしくは ComfyUI で生成したものであれば、その生成時のプロンプトをPNGファイルから抽出してデータベースへ登録します。JPEGファイルも画像検索対象にできますが、画像生成時のプロンプトは登録されません。なお、ご自身でPNGファイルにテキストチャンクを埋め込みたい場合は、[こちら](https://qiita.com/yuji-arakawa/items/1a8cfeff8f81ba808389)の記事中のコードを参考にしてください。SD3で画像生成しつつ生成画像にテキストチャンクを埋め込んでいる記事です。
@@ -1088,7 +1133,7 @@ python register_generation_prompt.py
 python register_generation_prompt_embeddings.py
 ```
 
-#### 画像のキャプションとそのテキストベクトルのデータベースへの登録
+### 画像のキャプションとそのテキストベクトルのデータベースへの登録
 ![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/74534/3aebceb0-2861-a97f-577d-bb31f7ab71f1.png)
 
 事前に上で生成したキャプションファイル captions.json のデータをデータベースへ登録します。
