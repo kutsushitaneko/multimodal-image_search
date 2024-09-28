@@ -747,10 +747,8 @@ with gr.Blocks(title="画像検索") as demo:
         page_info_text = f"1 / {total_pages}"
         return images, image_info, gr.update(interactive=False), gr.update(interactive=total_pages > 1), 1, page_info_text
 
-    demo.load(load_initial_gallery, outputs=[gallery, image_info_state, prev_button, next_button, current_page, page_info])
-    
     # デモの起動時に初期画像を表示
-    demo.load(load_initial_gallery, outputs=[gallery, image_info_state])
+    demo.load(load_initial_gallery, outputs=[gallery, image_info_state, prev_button, next_button, current_page, page_info])
 
 if __name__ == "__main__":
     try:
